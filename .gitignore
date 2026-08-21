@@ -1,0 +1,10 @@
+downloads_reinf/
+perfil_robo/
+test_main.py
+teste_robo.py
+__pycache__/
+app/__pycache__/
+venv/
+app/providers/__pycache__/
+app/static/__pycache__/
+*.db

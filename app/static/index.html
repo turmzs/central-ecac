@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Central de Automação - Auditar</title>
+    <style>
+        /* Estilos gerais da página */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        /* Estilos para as caixas de status */
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        .PENDING {
+            background-color: #f39c12;
+            color: white;
+        }
+
+        .PROCESSING {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .COMPLETED {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        .FAILED {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        /* Estilos para as nossas novas tabelas de resultados */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            margin-bottom: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            color: #2c3e50;
+        }
+
+        .event-title {
+            margin-bottom: 5px;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            display: inline-block;
+            padding-bottom: 3px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Central de Automação e-CAC</h1>
+
+    <!-- Formulário de Solicitação -->
+    <div class="card">
+        <h3>Nova Solicitação: EFD-Reinf</h3>
+        <input type="text" id="cnpj" placeholder="CNPJ (Ex: 12345678000190)" maxlength="18">
+        <input type="text" id="competencia" placeholder="Competência (Ex: 07/2026)" maxlength="7">
+        <button onclick="solicitar()">Solicitar REINF</button>
+    </div>
+
+    <!-- Área de Resultados e Status -->
+    <div class="card" id="resultadoCard" style="display: none;">
+        <h3>Solicitação #<span id="jobId"></span></h3>
+        <div id="statusBox" class="status">Aguardando...</div>
+        <div id="filaInfo" style="margin-top: 10px; color: #7f8c8d;"></div>
+
+        <!-- Esta div ficará escondida até o status ser COMPLETED -->
+        <div id="dadosRetorno" style="display: none; margin-top: 25px;">
+
+            <!-- Tabela do Evento R-2099 -->
+            <h4 class="event-title">Fechamento R-2099 (Retenções Previdenciárias)</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Situação</th>
+                        <th>Data/Hora do Envio</th>
+                        <th>Número do Recibo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="r2099-situacao">-</td>
+                        <td id="r2099-data">-</td>
+                        <td id="r2099-recibo">-</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Tabela do Evento R-4099 -->
+            <h4 class="event-title">Fechamento R-4099 (Rendimentos Pagos/Creditados)</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Situação</th>
+                        <th>Data/Hora do Envio</th>
+                        <th>Número do Recibo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="r4099-situacao">-</td>
+                        <td id="r4099-data">-</td>
+                        <td id="r4099-recibo">-</td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </div>
+    </div>
+
+    <script>
+        let pollingInterval;
+
+        // Função que envia os dados para o Backend
+        async function solicitar() {
+            const cnpj = document.getElementById('cnpj').value;
+            const competencia = document.getElementById('competencia').value;
+
+            if (!cnpj || !competencia) return alert("Preencha CNPJ e Competência");
+
+            const btn = document.querySelector('button');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cnpj, competencia })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || "Erro");
+
+                // Esconde os resultados antigos se houver
+                document.getElementById('dadosRetorno').style.display = 'none';
+                document.getElementById('resultadoCard').style.display = 'block';
+                document.getElementById('jobId').innerText = data.id.substring(0, 8) + '...';
+
+                iniciarPolling(data.id);
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Função que agenda a verificação a cada 3 segundos
+        function iniciarPolling(jobId) {
+            if (pollingInterval) clearInterval(pollingInterval);
+            atualizarStatus(jobId);
+            pollingInterval = setInterval(() => atualizarStatus(jobId), 3000);
+        }
+
+        // Função que pergunta ao Backend qual o status atual do Job
+        async function atualizarStatus(jobId) {
+            const response = await fetch(`/api/jobs/${jobId}`);
+            const data = await response.json();
+
+            // Atualiza a cor e o texto do Status
+            const statusBox = document.getElementById('statusBox');
+            statusBox.className = 'status ' + data.status;
+
+            let textoStatus = data.status;
+            if (data.status === 'PENDING') textoStatus = 'Na fila...';
+            if (data.status === 'PROCESSING') textoStatus = 'Processando (acessando e-CAC)...';
+            if (data.status === 'COMPLETED') textoStatus = 'Concluído com Sucesso!';
+            if (data.status === 'FAILED') textoStatus = 'Falha: ' + data.erro;
+
+            statusBox.innerText = textoStatus;
+
+            // Atualiza a informação de posição na fila
+            const filaInfo = document.getElementById('filaInfo');
+            if (data.posicao_fila > 0) {
+                filaInfo.innerText = `Sua posição na fila: ${data.posicao_fila}`;
+            } else {
+                filaInfo.innerText = '';
+            }
+
+            // SE O TRABALHO TERMINOU COM SUCESSO, PREENCHE AS TABELAS
+            if (data.status === 'COMPLETED') {
+                clearInterval(pollingInterval); // Para de perguntar ao servidor
+
+                if (data.resultado) {
+                    // Mostra a div que contém as tabelas
+                    document.getElementById('dadosRetorno').style.display = 'block';
+
+                    // Preenche a tabela do R-2099
+                    if (data.resultado.r2099) {
+                        document.getElementById('r2099-situacao').innerText = data.resultado.r2099.situacao;
+                        document.getElementById('r2099-data').innerText = data.resultado.r2099.data_hora_envio;
+                        document.getElementById('r2099-recibo').innerText = data.resultado.r2099.numero_recibo;
+                    }
+
+                    // Preenche a tabela do R-4099
+                    if (data.resultado.r4099) {
+                        document.getElementById('r4099-situacao').innerText = data.resultado.r4099.situacao;
+                        document.getElementById('r4099-data').innerText = data.resultado.r4099.data_hora_envio;
+                        document.getElementById('r4099-recibo').innerText = data.resultado.r4099.numero_recibo;
+                    }
+                }
+            } else if (data.status === 'FAILED') {
+                clearInterval(pollingInterval);
+            }
+        }
+    </script>
+</body>
+
+</html>
